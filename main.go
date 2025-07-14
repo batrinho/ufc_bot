@@ -38,8 +38,6 @@ func initBot(botToken string) {
 	log.Println("Bot running as:", bot.Self.UserName)
 }
 
-// ... rest of your code remains unchanged ...
-
 func handleUpdates() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 30
