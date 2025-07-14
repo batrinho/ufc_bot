@@ -48,6 +48,8 @@ func handleUpdates() {
 	for update := range updates {
 		switch {
 		case update.Message != nil:
+			user := update.Message.From
+			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
 				case "start":
@@ -309,4 +311,11 @@ func handleRemoveSubscription(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, "Select a subscription to remove:")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	bot.Send(msg)
+}
+
+func getUserDisplayName(user *tgbotapi.User) string {
+	if user.UserName != "" {
+		return "@" + user.UserName
+	}
+	return fmt.Sprintf("%s %s", user.FirstName, user.LastName)
 }
