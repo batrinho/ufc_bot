@@ -4,30 +4,21 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
+	"ufc_bot/db"
 	"ufc_bot/model"
 	"ufc_bot/networking"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var (
-	bot               *tgbotapi.BotAPI
-	subscriptions     = make(map[string]*Subscription)
-	subscriptionsLock sync.RWMutex
-)
+var bot *tgbotapi.BotAPI
 
 const botToken = "7440150663:AAHLGdabG0pWnHGDs9vAhLTx4EEv4LXktR0"
 
-type Subscription struct {
-	ChatIDs    map[int64]bool
-	EventTime  time.Time
-	FightLabel string
-}
-
 func main() {
+	db.InitDB("ufc.db")
 	initBot()
 	go pollSubscriptions()
 	handleUpdates()
@@ -50,122 +41,122 @@ func handleUpdates() {
 	for update := range updates {
 		switch {
 		case update.Message != nil:
-			handleMessage(update.Message)
+			if update.Message.IsCommand() {
+				switch update.Message.Command() {
+				case "start":
+					showMainMenu(update.Message.Chat.ID)
+				default:
+					bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "❌ Unknown command. Try /start"))
+				}
+			} else {
+				handleUnknownMessage(update.Message.Chat.ID)
+			}
 		case update.CallbackQuery != nil:
-			handleCallback(update.CallbackQuery)
+			cb := update.CallbackQuery
+			chatID := cb.Message.Chat.ID
+
+			switch {
+			case cb.Data == "action_start":
+				showMainMenu(chatID)
+			case cb.Data == "action_subscribe":
+				handleCommand(chatID)
+			case cb.Data == "action_view":
+				handleViewSubscriptions(chatID)
+			case cb.Data == "action_remove":
+				handleRemoveSubscription(chatID)
+			case strings.HasPrefix(cb.Data, "remove|"):
+				fightLabel := strings.Split(cb.Data, "|")[1]
+				err := db.RemoveUserSubscription(chatID, fightLabel)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(chatID, "❌ Failed to remove subscription."))
+				} else {
+					bot.Send(tgbotapi.NewMessage(chatID, "✅ Subscription removed successfully!"))
+				}
+			default:
+				handleCallback(cb)
+			}
 		}
 	}
 }
 
-func handleMessage(msg *tgbotapi.Message) {
-	chatID := msg.Chat.ID
-	switch msg.Text {
-	case "/start":
-		showMainMenu(chatID)
-	default:
-		bot.Send(tgbotapi.NewMessage(chatID, "Unknown command. Use /start"))
-	}
-}
-
-func showMainMenu(chatID int64) {
-	markup := tgbotapi.NewInlineKeyboardMarkup(
+func handleUnknownMessage(chatID int64) {
+	msg := tgbotapi.NewMessage(chatID, "🤖 I don't understand that. Please go to main menu.")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📅 Select a fight to be notified for", "action_subscribe"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👀 See all fights I have selected", "action_view"),
+			tgbotapi.NewInlineKeyboardButtonData("Main Menu", "action_start"),
 		),
 	)
-	msg := tgbotapi.NewMessage(chatID, "Welcome! What would you like to do?")
-	msg.ReplyMarkup = markup
 	bot.Send(msg)
+}
+
+func handleCommand(chatID int64) {
+	event, err := networking.FetchEventData()
+	if err != nil {
+		log.Println("Failed to fetch event:", err)
+		return
+	}
+	sendFightSelection(chatID, event)
 }
 
 func handleCallback(cb *tgbotapi.CallbackQuery) {
 	chatID := cb.Message.Chat.ID
-	data := cb.Data
-
-	switch {
-	case data == "action_subscribe":
-		event, err := networking.FetchEventData()
-		if err != nil {
-			log.Println("Failed to fetch event:", err)
-			return
-		}
-		sendFightSelection(chatID, event)
-
-	case data == "action_view":
-		showUserSubscriptions(chatID)
-
-	case strings.Count(data, "|") == 2:
-		parts := strings.Split(data, "|")
-		eventID, fightID, label := parts[0], parts[1], parts[2]
-		event, err := networking.FetchEventByID(eventID)
-		if err != nil {
-			log.Println("Event fetch error:", err)
-			return
-		}
-		eventTime, err := parseEventTime(event.Date)
-		if err != nil {
-			log.Println("Time parse error:", err)
-			return
-		}
-		statusURL := buildStatusURL(eventID, fightID)
-
-		subscriptionsLock.Lock()
-		if subscriptions[statusURL] == nil {
-			subscriptions[statusURL] = &Subscription{
-				ChatIDs:    map[int64]bool{},
-				EventTime:  eventTime,
-				FightLabel: label,
-			}
-		}
-		subscriptions[statusURL].ChatIDs[chatID] = true
-		subscriptionsLock.Unlock()
-
-		bot.Send(tgbotapi.NewMessage(chatID, "✅ Subscribed"))
-
-	default:
-		log.Println("Unknown callback:", data)
+	params := strings.Split(cb.Data, "|")
+	if len(params) != 3 {
+		log.Println("Malformed callback data:", cb.Data)
+		return
 	}
-
-	bot.Request(tgbotapi.NewCallback(cb.ID, ""))
-}
-
-func showUserSubscriptions(chatID int64) {
-	subscriptionsLock.RLock()
-	defer subscriptionsLock.RUnlock()
-
-	var lines []string
-	for _, sub := range subscriptions {
-		if sub.ChatIDs[chatID] {
-			t := sub.EventTime.Format("Jan 02 15:04 MST")
-			lines = append(lines, fmt.Sprintf("• %s at %s", sub.FightLabel, t))
-		}
+	eventID, fightID, label := params[0], params[1], params[2]
+	event, err := networking.FetchEventByID(eventID)
+	if err != nil {
+		log.Println("Event fetch error:", err)
+		return
 	}
-	if len(lines) == 0 {
-		bot.Send(tgbotapi.NewMessage(chatID, "😔 You haven’t subscribed to any fights."))
+	eventTime, err := parseEventTime(event.Date)
+	if err != nil {
+		log.Println("Time parse error:", err)
 		return
 	}
 
-	msg := fmt.Sprintf("📋 Your Subscriptions:\n%s", strings.Join(lines, "\n"))
-	bot.Send(tgbotapi.NewMessage(chatID, msg))
+	statusURL := buildStatusURL(eventID, fightID)
+	status, err := networking.FetchFightStatus(statusURL)
+	if err != nil {
+		log.Println("Error fetching status during subscription:", err)
+		return
+	}
+
+	switch status.Type.Name {
+	case "STATUS_FINAL":
+		bot.Send(tgbotapi.NewMessage(chatID, "❌ This fight is already over."))
+		return
+	case "STATUS_FIGHTERS_WALKING":
+		bot.Send(tgbotapi.NewMessage(chatID, "🚨 Fighters are walking out now!"))
+		return
+	default:
+		if status.Type.Name != "STATUS_SCHEDULED" && status.Type.Name != "STATUS_PREFIGHT" {
+			bot.Send(tgbotapi.NewMessage(chatID, "🔥 The fight is happening right now!"))
+			return
+		}
+	}
+
+	db.InsertSubscription(statusURL, label, eventTime)
+	db.AddChatSubscription(statusURL, chatID)
+	bot.Send(tgbotapi.NewMessage(chatID, "✅ Subscribed!"))
 }
 
 func sendFightSelection(chatID int64, event *model.Event) {
 	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Select a fight: *%s*", event.Name))
 	msg.ParseMode = "Markdown"
 
-	type btn struct {
+	type buttonData struct {
 		index   int
 		label   string
 		fightID string
 	}
-	results := make(chan btn, len(event.Fights))
 
+	results := make(chan buttonData, len(event.Fights))
 	for i, f := range event.Fights {
 		go func(i int, fight model.Fight) {
-			results <- btn{i, getFightLabel(fight), fight.ID}
+			results <- buttonData{i, getFightLabel(fight), fight.ID}
 		}(i, f)
 	}
 
@@ -188,7 +179,6 @@ func getFightLabel(fight model.Fight) string {
 	if len(fight.FighterUrls) < 2 {
 		return "Unknown Fight"
 	}
-
 	type nameResult struct {
 		name string
 		err  error
@@ -211,38 +201,32 @@ func getFightLabel(fight model.Fight) string {
 
 func pollSubscriptions() {
 	for {
-		now := time.Now().UTC()
-		var active [][2]string
-
-		subscriptionsLock.RLock()
-		for url, sub := range subscriptions {
-			if now.After(sub.EventTime) {
-				active = append(active, [2]string{url, sub.FightLabel})
-			}
+		due, err := db.GetDueSubscriptions()
+		if err != nil {
+			log.Println("Failed to fetch due subscriptions:", err)
+			time.Sleep(30 * time.Second)
+			continue
 		}
-		subscriptionsLock.RUnlock()
 
-		for _, entry := range active {
-			url, label := entry[0], entry[1]
-			status, err := networking.FetchFightStatus(url)
+		for _, sub := range due {
+			status, err := networking.FetchFightStatus(sub.URL)
 			if err != nil {
 				log.Println("Status fetch failed:", err)
 				continue
 			}
-
 			if status.Type.Name == "STATUS_FIGHTERS_WALKING" {
-				subscriptionsLock.RLock()
-				for chatID := range subscriptions[url].ChatIDs {
-					msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("🚨 Fighters walking out: %s", label))
-					bot.Send(msg)
+				chatIDs, err := db.GetChatIDsForURL(sub.URL)
+				if err != nil {
+					log.Println("Failed to get chat IDs:", err)
+					continue
 				}
-				subscriptionsLock.RUnlock()
-
-				subscriptionsLock.Lock()
-				delete(subscriptions, url)
-				subscriptionsLock.Unlock()
+				for _, id := range chatIDs {
+					bot.Send(tgbotapi.NewMessage(id, fmt.Sprintf("🚨 Fighters walking out: %s", sub.FightLabel)))
+				}
+				db.RemoveSubscription(sub.URL)
 			}
 		}
+
 		time.Sleep(30 * time.Second)
 	}
 }
@@ -254,4 +238,68 @@ func parseEventTime(raw string) (time.Time, error) {
 
 func buildStatusURL(eventID, fightID string) string {
 	return fmt.Sprintf("http://sports.core.api.espn.com/v2/sports/mma/leagues/ufc/events/%s/competitions/%s/status?lang=en&region=us", eventID, fightID)
+}
+
+func showMainMenu(chatID int64) {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Select a fight to be notified for", "action_subscribe"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👀 See all fights I have selected", "action_view"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ Remove a fight", "action_remove"),
+		),
+	)
+	msg := tgbotapi.NewMessage(chatID, "Welcome! What would you like to do?")
+	msg.ReplyMarkup = markup
+	bot.Send(msg)
+}
+
+func handleViewSubscriptions(chatID int64) {
+	subs, err := db.GetSubscriptionsForChat(chatID)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "Failed to load your subscriptions."))
+		return
+	}
+	if len(subs) == 0 {
+		bot.Send(tgbotapi.NewMessage(chatID, "You have no active subscriptions."))
+		return
+	}
+	var msgText strings.Builder
+	msgText.WriteString("📌 Your current fight subscriptions:\n")
+	for _, s := range subs {
+		msgText.WriteString(fmt.Sprintf("- %s at %s UTC\n", s.FightLabel, s.EventTime.Format("02 Jan 15:04")))
+	}
+	bot.Send(tgbotapi.NewMessage(chatID, msgText.String()))
+}
+
+func handleRemoveSubscription(chatID int64) {
+	subs, err := db.GetSubscriptionsForChat(chatID)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "❌ Failed to load subscriptions."))
+		return
+	}
+	if len(subs) == 0 {
+		bot.Send(tgbotapi.NewMessage(chatID, "You have no active subscriptions to remove."))
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	for _, sub := range subs {
+		btn := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("❌ %s (%s)", sub.FightLabel, sub.EventTime.Format("Jan 2")),
+			fmt.Sprintf("remove|%s", sub.FightLabel),
+		)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(btn))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔙 Cancel", "action_start"),
+	))
+
+	msg := tgbotapi.NewMessage(chatID, "Select a subscription to remove:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+	bot.Send(msg)
 }
