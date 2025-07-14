@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -11,20 +12,24 @@ import (
 	"ufc_bot/networking"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/joho/godotenv"
 )
 
 var bot *tgbotapi.BotAPI
 
-const botToken = "7440150663:AAHLGdabG0pWnHGDs9vAhLTx4EEv4LXktR0"
-
 func main() {
+	_ = godotenv.Load()
+	botToken := os.Getenv("BOT_TOKEN")
+	if botToken == "" {
+		log.Fatal("BOT_TOKEN is not set")
+	}
 	db.InitDB("ufc.db")
-	initBot()
+	initBot(botToken)
 	go pollSubscriptions()
 	handleUpdates()
 }
 
-func initBot() {
+func initBot(botToken string) {
 	var err error
 	bot, err = tgbotapi.NewBotAPI(botToken)
 	if err != nil {
@@ -32,6 +37,8 @@ func initBot() {
 	}
 	log.Println("Bot running as:", bot.Self.UserName)
 }
+
+// ... rest of your code remains unchanged ...
 
 func handleUpdates() {
 	u := tgbotapi.NewUpdate(0)
