@@ -150,7 +150,9 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 	db.InsertSubscription(statusURL, label, eventTime)
 	db.AddChatSubscription(statusURL, chatID)
 
-	bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Subscribed to the fight: *%s*", label)))
+	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Subscribed to the fight: *%s*", label))
+	msg.ParseMode = "Markdown"
+	bot.Send(msg)
 }
 
 func sendFightSelection(chatID int64, event *model.Event) {
