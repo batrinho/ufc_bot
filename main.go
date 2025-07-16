@@ -256,7 +256,7 @@ func showMainMenu(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("📅 Subscribe to a fight", "action_subscribe"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👀 See all fights", "action_view"),
+			tgbotapi.NewInlineKeyboardButtonData("👀 My fights", "action_view"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("❌ Remove a fight", "action_remove"),
