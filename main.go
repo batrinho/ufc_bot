@@ -282,7 +282,7 @@ func handleViewSubscriptions(chatID int64) {
 	var msgText strings.Builder
 	msgText.WriteString("📌 Your current fight subscriptions:\n")
 	for _, s := range subs {
-		msgText.WriteString(fmt.Sprintf("- %s at %s UTC\n", s.FightLabel, s.EventTime.Format("02 Jan 15:04")))
+		msgText.WriteString(fmt.Sprintf("- %s at %s\n", s.FightLabel, s.EventTime.Format("02 Jan")))
 	}
 	bot.Send(tgbotapi.NewMessage(chatID, msgText.String()))
 }
