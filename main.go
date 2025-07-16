@@ -89,7 +89,7 @@ func handleUpdates() {
 }
 
 func handleUnknownMessage(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, "🤖 I don't understand that. Please go to main menu.")
+	msg := tgbotapi.NewMessage(chatID, "🤖 I don't understand that. Use /start or see actions from the main menu.")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Main Menu", "action_start"),
@@ -149,11 +149,12 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 
 	db.InsertSubscription(statusURL, label, eventTime)
 	db.AddChatSubscription(statusURL, chatID)
-	bot.Send(tgbotapi.NewMessage(chatID, "✅ Subscribed!"))
+
+	bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Subscribed to the fight: *%s*", label)))
 }
 
 func sendFightSelection(chatID int64, event *model.Event) {
-	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Select a fight: *%s*", event.Name))
+	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Select a fight from the event: *%s*", event.Name))
 	msg.ParseMode = "Markdown"
 
 	type buttonData struct {
@@ -230,7 +231,7 @@ func pollSubscriptions() {
 					continue
 				}
 				for _, id := range chatIDs {
-					bot.Send(tgbotapi.NewMessage(id, fmt.Sprintf("🚨 Fighters walking out: %s", sub.FightLabel)))
+					bot.Send(tgbotapi.NewMessage(id, fmt.Sprintf("🚨 Fighters are walking out for: %s", sub.FightLabel)))
 				}
 				db.RemoveSubscription(sub.URL)
 			}
@@ -252,10 +253,10 @@ func buildStatusURL(eventID, fightID string) string {
 func showMainMenu(chatID int64) {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📅 Select a fight to be notified for", "action_subscribe"),
+			tgbotapi.NewInlineKeyboardButtonData("📅 Subscribe to a fight", "action_subscribe"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👀 See all fights I have selected", "action_view"),
+			tgbotapi.NewInlineKeyboardButtonData("👀 See all fights", "action_view"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("❌ Remove a fight", "action_remove"),
