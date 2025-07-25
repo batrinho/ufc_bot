@@ -138,10 +138,10 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 		bot.Send(tgbotapi.NewMessage(chatID, "❌ This fight is already over."))
 		return
 	case "STATUS_FIGHTERS_WALKING":
-		bot.Send(tgbotapi.NewMessage(chatID, "🚨 Fighters are walking out now!"))
+		bot.Send(tgbotapi.NewMessage(chatID, "🚨 The Fight is already about to start!"))
 		return
 	default:
-		if status.Type.Name != "STATUS_SCHEDULED" && status.Type.Name != "STATUS_PREFIGHT" {
+		if status.Type.Name != "STATUS_SCHEDULED" && status.Type.Name != "STATUS_PRE_FIGHT" {
 			bot.Send(tgbotapi.NewMessage(chatID, "🔥 The fight is happening right now!"))
 			return
 		}
@@ -233,7 +233,7 @@ func pollSubscriptions() {
 					continue
 				}
 				for _, id := range chatIDs {
-					bot.Send(tgbotapi.NewMessage(id, fmt.Sprintf("🚨 Fighters are walking out for: %s", sub.FightLabel)))
+					bot.Send(tgbotapi.NewMessage(id, fmt.Sprintf("🚨 The Fight is about to start: %s", sub.FightLabel)))
 				}
 				db.RemoveSubscription(sub.URL)
 			}
