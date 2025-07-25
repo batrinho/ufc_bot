@@ -47,9 +47,9 @@ func handleUpdates() {
 
 	for update := range updates {
 		user := update.Message.From
-		log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
 		switch {
 		case update.Message != nil:
+			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
 				case "start":
@@ -64,6 +64,7 @@ func handleUpdates() {
 			cb := update.CallbackQuery
 			chatID := cb.Message.Chat.ID
 
+			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
 			switch {
 			case cb.Data == "action_start":
 				showMainMenu(chatID)
