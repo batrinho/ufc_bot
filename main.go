@@ -64,7 +64,7 @@ func handleUpdates() {
 			cb := update.CallbackQuery
 			chatID := cb.Message.Chat.ID
 
-			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
+			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, cb.Data)
 			switch {
 			case cb.Data == "action_start":
 				showMainMenu(chatID)
