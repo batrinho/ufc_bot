@@ -46,9 +46,9 @@ func handleUpdates() {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		user := update.Message.From
 		switch {
 		case update.Message != nil:
+			user := update.Message.From
 			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, update.Message.Text)
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
@@ -62,6 +62,7 @@ func handleUpdates() {
 			}
 		case update.CallbackQuery != nil:
 			cb := update.CallbackQuery
+			user := cb.From
 			chatID := cb.Message.Chat.ID
 
 			log.Printf("Message from %s (ID: %d): %s", getUserDisplayName(user), user.ID, cb.Data)
