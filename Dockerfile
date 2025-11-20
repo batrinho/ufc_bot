@@ -1,20 +1,32 @@
-# syntax=docker/dockerfile:1
-
-FROM golang:1.21
-
-ENV CGO_ENABLED=1
-ENV GOOS=linux
-
-RUN apt-get update && apt-get install -y gcc sqlite3 libsqlite3-dev
+# Build stage
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-COPY go.mod ./
-COPY go.sum ./
+# If you have go.mod/go.sum, keep this
+COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy all source
 COPY . .
 
-RUN go build -o bot .
+# Build binary
+RUN go build -o ufc_bot .
 
-CMD ["./bot"]
+# Run stage
+FROM alpine:3.19
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/ufc_bot /app/ufc_bot
+
+# DB dir if you use SQLite
+RUN mkdir -p /data
+
+# Declare env vars (no secrets here)
+ENV TELEGRAM_BOT_TOKEN=""
+ENV UFC_BOT_DB_PATH="/data/ufc_bot.db"
+
+CMD ["/app/ufc_bot"]
